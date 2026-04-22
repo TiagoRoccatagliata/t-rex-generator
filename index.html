@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>T-Rex Neural — Simulación</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="style.css">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <script src="script.js" defer></script>
+</head>
+
+<body>
+
+    <div class="wrap">
+
+        <header>
+            <h1>50 redes neuronales aprenden a jugar <span class="accent">desde cero</span></h1>
+            <p class="lead">
+                Neuroevolución en vivo. Cada dinosaurio tiene una red neuronal propia de <b>57 parámetros</b>.
+                Al principio chocan con todo. Generación tras generación, los mejores se reproducen, mutan, y el juego
+                se vuelve imposible de perder.
+            </p>
+        </header>
+
+        <div class="arena-wrap">
+            <div class="arena">
+                <canvas id="game"></canvas>
+                <div class="overlay" id="overlay">
+                    <div class="tag-hello">👋 Hola</div>
+                    <h2>Listos para empezar</h2>
+                    <p>Vas a ver 50 dinosaurios aprender a saltar cactus <b>desde cero</b>, generación tras generación.
+                    </p>
+                    <button class="start-btn" id="startBtn">Iniciar simulación</button>
+                </div>
+            </div>
+
+            <aside class="hud">
+                <div class="stat alert">
+                    <label>Generación</label>
+                    <div class="value" id="gen">00<span class="unit">/ ∞</span></div>
+                </div>
+                <div class="stat">
+                    <label>Puntaje máximo histórico</label>
+                    <div class="value" id="best">0000<span class="unit">pts</span></div>
+                </div>
+                <div class="stat-grid">
+                    <div class="stat">
+                        <label>Vivos</label>
+                        <div class="value" id="alive">50</div>
+                    </div>
+                    <div class="stat">
+                        <label>Score actual</label>
+                        <div class="value" id="current">0</div>
+                    </div>
+                </div>
+                <div class="chart">
+                    <label>Evolución del fitness</label>
+                    <canvas id="chart"></canvas>
+                </div>
+            </aside>
+        </div>
+
+        <div class="controls">
+            <div class="group">
+                <span class="label">Velocidad</span>
+                <button class="btn speed active" data-speed="1">×1</button>
+                <button class="btn speed" data-speed="3">×3</button>
+                <button class="btn speed" data-speed="8">×8</button>
+                <button class="btn speed" data-speed="20">×20</button>
+            </div>
+            <div class="spacer"></div>
+            <div class="group">
+                <button class="btn warn" id="pauseBtn" disabled>Pausar</button>
+                <button class="btn danger" id="resetBtn">Reset</button>
+            </div>
+        </div>
+
+        <div class="info-cards">
+            <div class="info-card primary">
+                <div class="k">Población</div>
+                <div class="v">50 dinosaurios</div>
+            </div>
+            <div class="info-card">
+                <div class="k">Arquitectura</div>
+                <div class="v">5 → 8 → 1 (tanh)</div>
+            </div>
+            <div class="info-card">
+                <div class="k">Mutación</div>
+                <div class="v">10% · σ = 0.4</div>
+            </div>
+            <div class="info-card">
+                <div class="k">Selección</div>
+                <div class="v">Elitismo top-2</div>
+            </div>
+        </div>
+
+        <footer>Programación Avanzada · Universidad CAECE · 2026</footer>
+
+    </div>
+</body>
+
+</html>
