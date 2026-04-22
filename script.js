@@ -1,65 +1,3 @@
-
-const rand = (a = 1, b = null) => b === null ? (Math.random() * 2 - 1) * a : a + Math.random() * (b - a);
-const gaussian = () => {
-    let u = 0, v = 0;
-    while (u === 0) u = Math.random();
-    while (v === 0) v = Math.random();
-    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-};
-
-class NeuralNet {
-    constructor(nIn = 5, nHid = 8, nOut = 1, weights = null) {
-        this.nIn = nIn; this.nHid = nHid; this.nOut = nOut;
-        if (weights) {
-            this.w1 = weights.w1.map(r => [...r]);
-            this.b1 = [...weights.b1];
-            this.w2 = weights.w2.map(r => [...r]);
-            this.b2 = [...weights.b2];
-        } else {
-            this.w1 = Array.from({ length: nHid }, () => Array.from({ length: nIn }, () => rand(1)));
-            this.b1 = Array.from({ length: nHid }, () => rand(1));
-            this.w2 = Array.from({ length: nOut }, () => Array.from({ length: nHid }, () => rand(1)));
-            this.b2 = Array.from({ length: nOut }, () => rand(1));
-        }
-    }
-    predict(input) {
-        const h = new Array(this.nHid);
-        for (let i = 0; i < this.nHid; i++) {
-            let s = this.b1[i];
-            for (let j = 0; j < this.nIn; j++) s += this.w1[i][j] * input[j];
-            h[i] = Math.tanh(s);
-        }
-        const o = new Array(this.nOut);
-        for (let i = 0; i < this.nOut; i++) {
-            let s = this.b2[i];
-            for (let j = 0; j < this.nHid; j++) s += this.w2[i][j] * h[j];
-            o[i] = Math.tanh(s);
-        }
-        return o;
-    }
-    clone() { return new NeuralNet(this.nIn, this.nHid, this.nOut, { w1: this.w1, b1: this.b1, w2: this.w2, b2: this.b2 }); }
-    mutate(rate = 0.08, strength = 0.4) {
-        const m = v => Math.random() < rate ? v + gaussian() * strength : v;
-        this.w1 = this.w1.map(r => r.map(m));
-        this.b1 = this.b1.map(m);
-        this.w2 = this.w2.map(r => r.map(m));
-        this.b2 = this.b2.map(m);
-    }
-    static crossover(a, b) {
-        const mix = (x, y) => Math.random() < 0.5 ? x : y;
-        const child = a.clone();
-        for (let i = 0; i < a.nHid; i++) {
-            for (let j = 0; j < a.nIn; j++) child.w1[i][j] = mix(a.w1[i][j], b.w1[i][j]);
-            child.b1[i] = mix(a.b1[i], b.b1[i]);
-        }
-        for (let i = 0; i < a.nOut; i++) {
-            for (let j = 0; j < a.nHid; j++) child.w2[i][j] = mix(a.w2[i][j], b.w2[i][j]);
-            child.b2[i] = mix(a.b2[i], b.b2[i]);
-        }
-        return child;
-    }
-}
-
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const chartCanvas = document.getElementById('chart');
@@ -70,9 +8,18 @@ const GROUND_Y = 240;
 const DINO_W = 18, DINO_H = 22;
 const GRAVITY = 0.7;
 const JUMP_V = -11.5;
-const POP_SIZE = 50;
-const MUTATION_RATE = 0.10;
-const MUTATION_STRENGTH = 0.4;
+
+const STATE_SIZE = 5;
+const ACTION_SIZE = 2;
+const GAMMA = 0.95;
+const EPSILON_START = 1.0;
+const EPSILON_MIN = 0.02;
+const EPSILON_DECAY = 0.995;
+const LEARNING_RATE = 0.001;
+const MEMORY_MAX = 5000;
+const BATCH_SIZE = 32;
+const TRAIN_EVERY = 5;
+const TARGET_UPDATE_EVERY = 50;
 
 const COLOR = {
     fg: '#ffffff',
@@ -87,57 +34,140 @@ function resize() { canvas.width = W; canvas.height = H; }
 resize();
 window.addEventListener('resize', resize);
 
+class DQNAgent {
+    constructor() {
+        this.gamma = GAMMA;
+        this.epsilon = EPSILON_START;
+        this.memory = [];
+        this.model = this.buildModel();
+        this.targetModel = this.buildModel();
+        this.syncTarget();
+        this.isTraining = false;
+        this.trainSteps = 0;
+        this.lastLoss = 0;
+    }
+    buildModel() {
+        const m = tf.sequential();
+        m.add(tf.layers.dense({ inputShape: [STATE_SIZE], units: 24, activation: 'relu' }));
+        m.add(tf.layers.dense({ units: 24, activation: 'relu' }));
+        m.add(tf.layers.dense({ units: ACTION_SIZE, activation: 'linear' }));
+        m.compile({ optimizer: tf.train.adam(LEARNING_RATE), loss: 'meanSquaredError' });
+        return m;
+    }
+    syncTarget() {
+        this.targetModel.setWeights(this.model.getWeights());
+    }
+    act(state) {
+        if (Math.random() < this.epsilon) {
+            return Math.random() < 0.15 ? 1 : 0;
+        }
+        return tf.tidy(() => {
+            const q = this.model.predict(tf.tensor2d([state]));
+            return q.argMax(1).dataSync()[0];
+        });
+    }
+    remember(s, a, r, ns, done) {
+        this.memory.push({ s, a, r, ns, done });
+        if (this.memory.length > MEMORY_MAX) this.memory.shift();
+    }
+    async train() {
+        if (this.isTraining) return;
+        if (this.memory.length < BATCH_SIZE) return;
+        this.isTraining = true;
+
+        const batch = [];
+        for (let i = 0; i < BATCH_SIZE; i++) {
+            batch.push(this.memory[Math.floor(Math.random() * this.memory.length)]);
+        }
+        const states = batch.map(e => e.s);
+        const nextStates = batch.map(e => e.ns);
+
+        const qCurrent = tf.tidy(() =>
+            this.model.predict(tf.tensor2d(states)).arraySync()
+        );
+        const qNext = tf.tidy(() =>
+            this.targetModel.predict(tf.tensor2d(nextStates)).arraySync()
+        );
+
+        for (let i = 0; i < batch.length; i++) {
+            const { a, r, done } = batch[i];
+            // Bellman: Q(s,a) = r + gamma * max Q(s',a')
+            qCurrent[i][a] = done ? r : r + this.gamma * Math.max(...qNext[i]);
+        }
+
+        const xs = tf.tensor2d(states);
+        const ys = tf.tensor2d(qCurrent);
+        const h = await this.model.fit(xs, ys, { epochs: 1, verbose: 0 });
+        this.lastLoss = h.history.loss[0];
+        xs.dispose();
+        ys.dispose();
+
+        this.trainSteps++;
+        if (this.trainSteps % TARGET_UPDATE_EVERY === 0) this.syncTarget();
+        if (this.epsilon > EPSILON_MIN) this.epsilon *= EPSILON_DECAY;
+
+        this.isTraining = false;
+    }
+}
+
 class Dino {
-    constructor(brain) {
+    constructor(agent) {
         this.x = 60;
         this.y = GROUND_Y - DINO_H;
         this.vy = 0;
         this.alive = true;
         this.score = 0;
-        this.brain = brain || new NeuralNet();
-        const hue = Math.floor(Math.random() * 360);
-        this.color = `hsl(${hue},20%,65%)`;
+        this.agent = agent;
+        this.color = COLOR.accent;
+        this.prevState = null;
+        this.prevAction = 0;
     }
     jump() { if (this.y >= GROUND_Y - DINO_H - 0.5) this.vy = JUMP_V; }
-    think(obstacle, speed) {
+    getState(obstacles, speed) {
+        let obstacle = null;
+        for (const o of obstacles) { if (o.x + o.w > this.x) { obstacle = o; break; } }
         const dx = obstacle ? (obstacle.x - this.x) / W : 1;
         const ow = obstacle ? obstacle.w / 50 : 0;
         const oh = obstacle ? obstacle.h / 50 : 0;
         const v = speed / 15;
         const onGround = (this.y >= GROUND_Y - DINO_H - 0.5) ? 1 : 0;
-        const [out] = this.brain.predict([dx, ow, oh, v, onGround]);
-        if (out > 0) this.jump();
+        return [dx, ow, oh, v, onGround];
     }
     update(obstacles, speed) {
         if (!this.alive) return;
+
+        const state = this.getState(obstacles, speed);
+        const action = this.agent.act(state);
+        if (action === 1) this.jump();
+
         this.vy += GRAVITY;
         this.y += this.vy;
         if (this.y > GROUND_Y - DINO_H) { this.y = GROUND_Y - DINO_H; this.vy = 0; }
-        let next = null;
-        for (const o of obstacles) { if (o.x + o.w > this.x) { next = o; break; } }
-        this.think(next, speed);
+
+        let collided = false;
         for (const o of obstacles) {
             if (this.x < o.x + o.w - 2 &&
                 this.x + DINO_W > o.x + 2 &&
                 this.y < o.y + o.h - 2 &&
                 this.y + DINO_H > o.y + 2) {
-                this.alive = false;
-                return;
+                collided = true;
+                break;
             }
         }
+
+        const reward = collided ? -100 : 1;
+        const nextState = this.getState(obstacles, speed);
+        this.agent.remember(state, action, reward, nextState, collided);
+
+        if (collided) { this.alive = false; return; }
         this.score++;
     }
     draw(ctx, isLeader) {
         if (!this.alive) return;
         ctx.save();
-        if (isLeader) {
-            ctx.shadowColor = COLOR.accent;
-            ctx.shadowBlur = 8;
-            ctx.fillStyle = COLOR.accent;
-        } else {
-            ctx.globalAlpha = 0.35;
-            ctx.fillStyle = this.color;
-        }
+        ctx.shadowColor = COLOR.accent;
+        ctx.shadowBlur = 8;
+        ctx.fillStyle = COLOR.accent;
         const x = Math.round(this.x), y = Math.round(this.y);
         ctx.fillRect(x + 8, y + 0, 10, 8);
         ctx.fillRect(x + 16, y + 3, 2, 2);
@@ -148,11 +178,9 @@ class Dino {
         ctx.fillRect(x + 11, y + 18, 3, 4);
         if (phase === 0) ctx.fillRect(x + 4, y + 22, 3, 1);
         else ctx.fillRect(x + 11, y + 22, 3, 1);
-        if (isLeader) {
-            ctx.shadowBlur = 0;
-            ctx.fillStyle = '#1a1d23';
-            ctx.fillRect(x + 14, y + 2, 2, 2);
-        }
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#1a1d23';
+        ctx.fillRect(x + 14, y + 2, 2, 2);
         ctx.restore();
     }
 }
@@ -185,42 +213,20 @@ class Population {
         this.generation = 1;
         this.bestEver = 0;
         this.history = [];
-        this.dinos = Array.from({ length: POP_SIZE }, () => new Dino());
+        this.agent = new DQNAgent();
+        this.dinos = [new Dino(this.agent)];
     }
     aliveDinos() { return this.dinos.filter(d => d.alive); }
-    leader() {
-        let best = this.dinos[0];
-        for (const d of this.dinos) {
-            if (d.alive && d.score > best.score) best = d;
-            else if (!best.alive && d.alive) best = d;
-        }
-        return best;
-    }
+    leader() { return this.dinos[0]; }
     allDead() { return this.dinos.every(d => !d.alive); }
     evolve() {
-        const sorted = [...this.dinos].sort((a, b) => b.score - a.score);
-        const genBest = sorted[0].score;
-        const avg = this.dinos.reduce((s, d) => s + d.score, 0) / this.dinos.length;
-        this.history.push({ gen: this.generation, best: genBest, avg });
+        const score = this.dinos[0].score;
+        if (score > this.bestEver) this.bestEver = score;
+        const recent = this.history.slice(-9).map(h => h.best).concat(score);
+        const avg = recent.reduce((s, v) => s + v, 0) / recent.length;
+        this.history.push({ gen: this.generation, best: score, avg });
         if (this.history.length > 60) this.history.shift();
-        if (genBest > this.bestEver) this.bestEver = genBest;
-        const elites = sorted.slice(0, 2).map(d => new Dino(d.brain.clone()));
-        const pool = sorted.slice(0, Math.max(6, Math.floor(POP_SIZE / 2)));
-        const weightedPick = () => {
-            const total = pool.reduce((s, d) => s + Math.max(1, d.score), 0);
-            let r = Math.random() * total;
-            for (const d of pool) { r -= Math.max(1, d.score); if (r <= 0) return d; }
-            return pool[0];
-        };
-        const children = [];
-        while (children.length < POP_SIZE - elites.length) {
-            const a = weightedPick();
-            const b = weightedPick();
-            const brain = NeuralNet.crossover(a.brain, b.brain);
-            brain.mutate(MUTATION_RATE, MUTATION_STRENGTH);
-            children.push(new Dino(brain));
-        }
-        this.dinos = [...elites, ...children];
+        this.dinos = [new Dino(this.agent)];
         this.generation++;
     }
 }
@@ -230,6 +236,7 @@ let obstacles = [];
 let baseSpeed = 6;
 let currentSpeed = baseSpeed;
 let frames = 0;
+let globalFrames = 0;
 let nextObstacleIn = 80;
 let running = false;
 let simSpeed = 1;
@@ -246,6 +253,7 @@ function resetGame() {
     pop = new Population();
     obstacles = [];
     frames = 0;
+    globalFrames = 0;
     currentSpeed = baseSpeed;
     nextObstacleIn = 80;
     updateHUD();
@@ -254,6 +262,7 @@ function resetGame() {
 
 function stepOnce() {
     frames++;
+    globalFrames++;
     currentSpeed = baseSpeed + Math.min(8, frames / 1200);
     nextObstacleIn--;
     if (nextObstacleIn <= 0) {
@@ -264,6 +273,11 @@ function stepOnce() {
     obstacles = obstacles.filter(o => !o.offscreen());
     for (const d of pop.dinos) d.update(obstacles, currentSpeed);
     groundOffset = (groundOffset + currentSpeed) % 20;
+
+    if (globalFrames % TRAIN_EVERY === 0) {
+        pop.agent.train();
+    }
+
     if (pop.allDead()) {
         pop.evolve();
         obstacles = [];
@@ -305,9 +319,7 @@ function render() {
     }
     drawGround();
     for (const o of obstacles) o.draw(ctx);
-    const leader = pop.leader();
-    for (const d of pop.dinos) { if (d === leader) continue; d.draw(ctx, false); }
-    leader.draw(ctx, true);
+    pop.leader().draw(ctx, true);
 }
 
 const el = {
@@ -326,7 +338,7 @@ function pad(n, w = 2) { return String(n).padStart(w, '0'); }
 function updateHUD() {
     el.gen.innerHTML = pad(pop.generation, 2) + '<span class="unit">/ &infin;</span>';
     el.best.innerHTML = pad(pop.bestEver, 4) + '<span class="unit">pts</span>';
-    el.alive.textContent = pop.aliveDinos().length;
+    el.alive.textContent = pop.agent.epsilon.toFixed(2);
     el.current.textContent = pop.leader().score;
 }
 
@@ -376,7 +388,7 @@ function loop() {
         for (let i = 0; i < simSpeed; i++) stepOnce();
         render();
         updateHUD();
-        if (frames % 8 === 0) drawChart();
+        if (globalFrames % 8 === 0) drawChart();
     } else render();
     requestAnimationFrame(loop);
 }

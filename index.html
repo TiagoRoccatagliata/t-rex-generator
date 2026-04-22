@@ -4,13 +4,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>T-Rex Neural — Simulación</title>
+    <title>T-Rex DQN — Aprendizaje por Refuerzo</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="style.css">
     <link
         href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
     <script src="script.js" defer></script>
 </head>
 
@@ -19,11 +20,12 @@
     <div class="wrap">
 
         <header>
-            <h1>50 redes neuronales aprenden a jugar <span class="accent">desde cero</span></h1>
+            <h1>Un dinosaurio aprende a jugar con la <span class="accent">Ecuación de Bellman</span></h1>
             <p class="lead">
-                Neuroevolución en vivo. Cada dinosaurio tiene una red neuronal propia de <b>57 parámetros</b>.
-                Al principio chocan con todo. Generación tras generación, los mejores se reproducen, mutan, y el juego
-                se vuelve imposible de perder.
+                Deep Q-Learning en vivo. Un único agente descubre la política óptima probando acciones,
+                guardando cada experiencia <b>(s, a, r, s′)</b> en una memoria de replay y entrenando una
+                red neuronal en <b>TensorFlow.js</b> cada 5 frames. El objetivo no evoluciona: se calcula con
+                <b>Q(s,a) = r + γ · max Q(s′,a′)</b>.
             </p>
         </header>
 
@@ -31,27 +33,30 @@
             <div class="arena">
                 <canvas id="game"></canvas>
                 <div class="overlay" id="overlay">
-                    <div class="tag-hello">👋 Hola</div>
-                    <h2>Listos para empezar</h2>
-                    <p>Vas a ver 50 dinosaurios aprender a saltar cactus <b>desde cero</b>, generación tras generación.
+                    <div class="tag-hello">🧠 Deep Q-Learning</div>
+                    <h2>Un agente, una red, Bellman</h2>
+                    <p>
+                        Vas a ver a un dino que <b>no sabe nada</b>. Explora (ε-greedy), cae contra los cactus,
+                        recuerda y entrena una red neuronal con la <b>Ecuación de Bellman</b> como brújula.
+                        Al principio choca; con las experiencias, aprende el valor Q óptimo de cada acción.
                     </p>
-                    <button class="start-btn" id="startBtn">Iniciar simulación</button>
+                    <button class="start-btn" id="startBtn">Iniciar entrenamiento</button>
                 </div>
             </div>
 
             <aside class="hud">
                 <div class="stat alert">
-                    <label>Generación</label>
-                    <div class="value" id="gen">00<span class="unit">/ ∞</span></div>
+                    <label>Episodio</label>
+                    <div class="value" id="gen">00<span class="unit">/ &infin;</span></div>
                 </div>
                 <div class="stat">
-                    <label>Puntaje máximo histórico</label>
+                    <label>Mejor score histórico</label>
                     <div class="value" id="best">0000<span class="unit">pts</span></div>
                 </div>
                 <div class="stat-grid">
                     <div class="stat">
-                        <label>Vivos</label>
-                        <div class="value" id="alive">50</div>
+                        <label>Epsilon (ε)</label>
+                        <div class="value" id="alive">1.00</div>
                     </div>
                     <div class="stat">
                         <label>Score actual</label>
@@ -59,7 +64,7 @@
                     </div>
                 </div>
                 <div class="chart">
-                    <label>Evolución del fitness</label>
+                    <label>Retorno por episodio</label>
                     <canvas id="chart"></canvas>
                 </div>
             </aside>
@@ -82,20 +87,20 @@
 
         <div class="info-cards">
             <div class="info-card primary">
-                <div class="k">Población</div>
-                <div class="v">50 dinosaurios</div>
+                <div class="k">Algoritmo</div>
+                <div class="v">DQN · Experience Replay</div>
             </div>
             <div class="info-card">
-                <div class="k">Arquitectura</div>
-                <div class="v">5 → 8 → 1 (tanh)</div>
+                <div class="k">Red Q(s,a)</div>
+                <div class="v">5 → 24 → 24 → 2 (ReLU)</div>
             </div>
             <div class="info-card">
-                <div class="k">Mutación</div>
-                <div class="v">10% · σ = 0.4</div>
+                <div class="k">Bellman</div>
+                <div class="v">γ = 0.95 · Adam 1e-3</div>
             </div>
             <div class="info-card">
-                <div class="k">Selección</div>
-                <div class="v">Elitismo top-2</div>
+                <div class="k">Exploración</div>
+                <div class="v">ε-greedy · decay 0.995</div>
             </div>
         </div>
 
